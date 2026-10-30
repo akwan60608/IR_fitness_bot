@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 chunking = "chunking.cli:main"
+chunking-build-index = "chunking.index_cli:main"
 chunking-rag-eval = "chunking.eval_cli:main"
 chunking-ocr-eval = "chunking.ocr_eval_cli:main"
 
