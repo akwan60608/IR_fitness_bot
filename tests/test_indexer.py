@@ -84,6 +84,18 @@ class IndexerTest(unittest.TestCase):
                     embeddings=_Embeddings(),
                 )
 
+    def test_build_rejects_a_pipeline_run_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            data_dir = Path(temporary) / "data"
+
+            with self.assertRaisesRegex(ValueError, "invalid pipeline_run_id"):
+                build_index(
+                    data_dir,
+                    "../outside",
+                    data_dir / "index" / "outside",
+                    embeddings=_Embeddings(),
+                )
+
     def test_load_rejects_document_records_that_do_not_match_the_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             data_dir = Path(temporary) / "data"
@@ -111,6 +123,20 @@ class IndexerTest(unittest.TestCase):
             _write_jsonl(documents_path, records)
 
             with self.assertRaisesRegex(ValueError, "source_refs"):
+                load_index(index_dir)
+
+    def test_load_rejects_an_invalid_picture_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            data_dir = Path(temporary) / "data"
+            pipeline_run_id = _pipeline_artifacts(data_dir)
+            index_dir = data_dir / "index" / pipeline_run_id
+            index_manifest = build_index(data_dir, pipeline_run_id, index_dir, embeddings=_Embeddings())
+            documents_path = index_dir / index_manifest["documents_file"]
+            records = [json.loads(line) for line in documents_path.read_text(encoding="utf-8").splitlines()]
+            records[1]["picture_ref"] = {"unexpected": "object"}
+            _write_jsonl(documents_path, records)
+
+            with self.assertRaisesRegex(ValueError, "picture_ref"):
                 load_index(index_dir)
 
     def test_cli_builds_an_index_from_a_named_pipeline_run(self) -> None:

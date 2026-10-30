@@ -58,8 +58,15 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _pipeline_manifest(data_dir: Path, pipeline_run_id: str) -> tuple[Path, dict[str, Any]]:
-    if not pipeline_run_id.strip():
-        raise ValueError("pipeline_run_id must not be empty.")
+    if (
+        not isinstance(pipeline_run_id, str)
+        or not pipeline_run_id.strip()
+        or pipeline_run_id in {".", ".."}
+        or "/" in pipeline_run_id
+        or "\\" in pipeline_run_id
+        or Path(pipeline_run_id).is_absolute()
+    ):
+        raise ValueError("invalid pipeline_run_id.")
     path = data_dir / "manifests" / f"{pipeline_run_id}.json"
     manifest = _read_json(path)
     if manifest.get("pipeline_run_id") != pipeline_run_id:
@@ -197,6 +204,9 @@ def load_index(index_dir: Path) -> LoadedIndex:
         page_numbers = record.get("page_numbers")
         if not isinstance(page_numbers, list) or not all(isinstance(value, int) and value > 0 for value in page_numbers):
             raise ValueError(f"Index record {record_id} has invalid page_numbers.")
+        picture_ref = record.get("picture_ref")
+        if picture_ref is not None and not isinstance(picture_ref, str):
+            raise ValueError(f"Index record {record_id} has an invalid picture_ref.")
         vector = record.get("embedding")
         if (
             not isinstance(vector, list)
