@@ -24,6 +24,8 @@ def _pipeline_artifacts(data_dir: Path, *, status: str = "success") -> str:
     manifest = {
         "pipeline_run_id": pipeline_run_id,
         "status": status,
+        "document_id": "sha256:demo-document",
+        "source_sha256": "a" * 64,
         "artifacts": {
             "chunks": "chunks/demo.jsonl",
             "media": "media/demo.jsonl",
@@ -96,6 +98,23 @@ class IndexerTest(unittest.TestCase):
                     embeddings=_Embeddings(),
                 )
 
+    def test_build_rejects_a_pipeline_run_without_source_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            data_dir = Path(temporary) / "data"
+            pipeline_run_id = _pipeline_artifacts(data_dir)
+            manifest_path = data_dir / "manifests" / f"{pipeline_run_id}.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            del manifest["source_sha256"]
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "source_sha256"):
+                build_index(
+                    data_dir,
+                    pipeline_run_id,
+                    data_dir / "index" / pipeline_run_id,
+                    embeddings=_Embeddings(),
+                )
+
     def test_load_rejects_document_records_that_do_not_match_the_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             data_dir = Path(temporary) / "data"
@@ -138,6 +157,11 @@ class IndexerTest(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "picture_ref"):
                 load_index(index_dir)
+
+    def test_load_rejects_a_missing_index_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(ValueError, "Missing index artifact"):
+                load_index(Path(temporary) / "missing-index")
 
     def test_cli_builds_an_index_from_a_named_pipeline_run(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

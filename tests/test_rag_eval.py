@@ -269,6 +269,18 @@ class RagEvaluationTest(unittest.TestCase):
 
         self.assertEqual([document.page_content for document in documents], ["P0 shared text", "P1 description"])
 
+    def test_load_documents_rejects_an_artifact_path_outside_the_data_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            data_dir = Path(temporary) / "data"
+            manifest = {"pipeline_run_id": "run-demo", "artifacts": {
+                "chunks": "../outside/chunks.jsonl",
+                "media": "media/demo.jsonl",
+                "media_chunks": "media_chunks/demo.jsonl",
+            }}
+
+            with self.assertRaisesRegex(ValueError, "outside data_dir"):
+                load_documents(data_dir, manifest)
+
     def test_chunker_comparison_reuses_the_fixed_media_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             data_dir = Path(temporary)

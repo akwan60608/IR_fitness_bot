@@ -381,9 +381,18 @@ def load_questions(path: Path) -> list[dict[str, Any]]:
 
 def _artifact_path(data_dir: Path, manifest: dict[str, Any], name: str) -> Path:
     try:
-        return data_dir / manifest["artifacts"][name]
+        artifact = manifest["artifacts"][name]
     except KeyError as error:
         raise ValueError(f"{manifest['pipeline_run_id']} has no {name} artifact.") from error
+    if not isinstance(artifact, str):
+        raise ValueError(f"{manifest['pipeline_run_id']} has an invalid {name} artifact path.")
+    root = data_dir.resolve()
+    path = (root / artifact).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as error:
+        raise ValueError(f"{manifest['pipeline_run_id']} has a {name} artifact outside data_dir.") from error
+    return path
 
 
 def _file_sha256(path: Path) -> str:

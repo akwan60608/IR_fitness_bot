@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -15,6 +16,7 @@ from chunking.pipeline.metadata import sha256_file, sha256_text, utc_now, write_
 
 INDEX_SCHEMA_VERSION = 1
 INDEX_MANIFEST_NAME = "manifest.json"
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 class Embeddings(Protocol):
@@ -73,7 +75,15 @@ def _pipeline_manifest(data_dir: Path, pipeline_run_id: str) -> tuple[Path, dict
         raise ValueError(f"Pipeline manifest at {path} does not match {pipeline_run_id}.")
     if manifest.get("status") != "success":
         raise ValueError(f"Pipeline run {pipeline_run_id} is not successful.")
+    if not isinstance(manifest.get("document_id"), str) or not manifest["document_id"]:
+        raise ValueError(f"Pipeline run {pipeline_run_id} has no valid document_id.")
+    if not _is_sha256(manifest.get("source_sha256")):
+        raise ValueError(f"Pipeline run {pipeline_run_id} has no valid source_sha256.")
     return path, manifest
+
+
+def _is_sha256(value: Any) -> bool:
+    return isinstance(value, str) and _SHA256.fullmatch(value) is not None
 
 
 def _safe_document(document: Any, embedding: list[float], index_id: str) -> dict[str, Any]:
@@ -149,6 +159,7 @@ def build_index(
         "index_id": index_id,
         "created_at": utc_now(),
         "pipeline_run_id": pipeline_run_id,
+        "document_id": pipeline_manifest["document_id"],
         "source_manifest_sha256": sha256_file(pipeline_manifest_path),
         "source_sha256": pipeline_manifest.get("source_sha256"),
         "embedding_model": embedding_model,
@@ -164,8 +175,11 @@ def _validate_manifest(index_dir: Path) -> dict[str, Any]:
     manifest = _read_json(index_dir / INDEX_MANIFEST_NAME)
     if manifest.get("schema_version") != INDEX_SCHEMA_VERSION:
         raise ValueError("Index manifest has an unsupported schema_version.")
-    for key in ("index_id", "pipeline_run_id", "embedding_model"):
+    for key in ("index_id", "pipeline_run_id", "document_id", "embedding_model"):
         if not isinstance(manifest.get(key), str) or not manifest[key]:
+            raise ValueError(f"Index manifest has no valid {key}.")
+    for key in ("source_manifest_sha256", "source_sha256"):
+        if not _is_sha256(manifest.get(key)):
             raise ValueError(f"Index manifest has no valid {key}.")
     if not isinstance(manifest.get("document_count"), int) or manifest["document_count"] < 1:
         raise ValueError("Index manifest has no valid document_count.")
