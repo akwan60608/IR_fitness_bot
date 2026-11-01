@@ -27,9 +27,9 @@ uv run chunking-ocr-eval --run <run-id> --ground-truth <ground-truth.jsonl>
 
 ## Run the local RAG service
 
-The service loads exactly one index and requires an answerability threshold
-calibrated from source-matched evaluation questions. Create and retain a
-calibration record; do not reuse a threshold across different indexes.
+The service loads exactly one index and defaults its answerability threshold to
+`0.6`. Calibrate a source-matched threshold before a real demo, retain the
+calibration record, and do not reuse it across different indexes.
 
 ```bash
 uv run chunking-rag-calibrate \
@@ -40,8 +40,8 @@ uv run chunking-rag-calibrate \
 
 The command uses the same raw-plus-rewritten dense score as the service and
 records the question-file hash with the selected `answerability_threshold`.
-Recalibrate when that hash or the selected index changes, then copy the value
-into the service configuration:
+Recalibrate when that hash or the selected index changes, then override the
+default in the service configuration:
 
 ```bash
 export INDEX_DIR=data/index/<pipeline-run-id>

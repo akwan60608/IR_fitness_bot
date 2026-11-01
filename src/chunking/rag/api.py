@@ -19,6 +19,9 @@ from chunking.pipeline.indexer import LoadedIndex, load_index
 from chunking.rag.service import RagService
 
 
+DEFAULT_ANSWERABILITY_THRESHOLD = 0.6
+
+
 class AnswerRequest(BaseModel):
     question: str
 
@@ -66,10 +69,10 @@ def create_app_from_environment() -> FastAPI:
 def _answerability_threshold_from_environment() -> float:
     value = os.getenv("ANSWERABILITY_THRESHOLD")
     try:
-        threshold = float(value) if value is not None else None
+        threshold = float(value) if value is not None else DEFAULT_ANSWERABILITY_THRESHOLD
     except ValueError as error:
         raise RuntimeError("ANSWERABILITY_THRESHOLD must be a cosine score from -1 to 1.") from error
-    if threshold is None or not -1 <= threshold <= 1:
+    if not -1 <= threshold <= 1:
         raise RuntimeError("ANSWERABILITY_THRESHOLD must be a cosine score from -1 to 1.")
     return threshold
 

@@ -51,17 +51,20 @@ class RagApiTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "INDEX_DIR"):
                 create_app_from_environment()
 
-    def test_startup_requires_an_explicit_calibrated_answerability_threshold(self) -> None:
-        for value in (None, "not-a-score", "1.1"):
+    def test_answerability_threshold_defaults_to_point_six_but_rejects_invalid_overrides(self) -> None:
+        for value, expected in ((None, 0.6), ("not-a-score", None), ("1.1", None)):
             with self.subTest(value=value), patch.dict(
                 os.environ,
-                {"INDEX_DIR": "data/index/demo", **({"ANSWERABILITY_THRESHOLD": value} if value else {})},
+                {} if value is None else {"ANSWERABILITY_THRESHOLD": value},
                 clear=True,
             ):
-                from chunking.rag.api import create_app_from_environment
+                from chunking.rag.api import _answerability_threshold_from_environment
 
-                with self.assertRaisesRegex(RuntimeError, "ANSWERABILITY_THRESHOLD"):
-                    create_app_from_environment()
+                if expected is None:
+                    with self.assertRaisesRegex(RuntimeError, "ANSWERABILITY_THRESHOLD"):
+                        _answerability_threshold_from_environment()
+                else:
+                    self.assertEqual(_answerability_threshold_from_environment(), expected)
 
     def test_answer_endpoint_returns_sse_result_and_done_events(self) -> None:
         service = RagService(
