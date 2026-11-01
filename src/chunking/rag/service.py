@@ -104,8 +104,7 @@ def render_cited_answer(answer: Any, aliases: dict[str, dict[str, Any]]) -> str 
             or len(set(sources)) != len(sources)
         ):
             return None
-        citations = "".join(f"[source_id={aliases[source]['record_id']}]" for source in sources)
-        rendered_claims.append(f"{text.strip()}{citations}")
+        rendered_claims.append(text.strip())
     return "\n".join(rendered_claims)
 
 

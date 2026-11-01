@@ -318,7 +318,7 @@ class RagServiceTest(unittest.TestCase):
             "requested_route": "visual",
         })
 
-    def test_maps_short_aliases_to_long_record_ids_without_putting_them_in_model_context(self) -> None:
+    def test_maps_short_aliases_without_putting_internal_ids_in_the_answer(self) -> None:
         contexts: list[str] = []
         long_record_id = "sha256:demo-document:chunk:9fbc33a1e2d4"
         service = RagService(
@@ -341,7 +341,8 @@ class RagServiceTest(unittest.TestCase):
 
         self.assertEqual(contexts, ["[source_key=S1]\n深蹲時保持背部中立。"])
         self.assertNotIn(long_record_id, contexts[0])
-        self.assertEqual(result["answer"], f"保持背部中立。[source_id={long_record_id}]")
+        self.assertEqual(result["answer"], "保持背部中立。")
+        self.assertNotIn("source_id", result["answer"])
         self.assertEqual(result["sources"][0]["source_id"], long_record_id)
 
 

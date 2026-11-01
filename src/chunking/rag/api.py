@@ -44,6 +44,7 @@ STRUCTURED_ANSWER_PROMPT = ChatPromptTemplate.from_messages([
         "system",
         "Answer only from the supplied context. Return one claim for each factual statement. "
         "Each claim must cite one or more source keys from the supplied context. "
+        "Answer in the same language as the question. "
         "Do not put citation markup in claim text.",
     ),
     ("human", "Question: {question}\n\nContext:\n{context}"),
