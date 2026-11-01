@@ -104,6 +104,7 @@ class RagService:
                 "route": "text",
                 "requested_route": "text",
             }
+        # shortcut: visual/table requests still retrieve text; add route-specific media and table retrieval in ticket #5.
         return retrieval_query.strip(), {
             "status": "rewritten",
             "route": "text",
