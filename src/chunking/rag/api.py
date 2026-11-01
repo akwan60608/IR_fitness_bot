@@ -9,12 +9,11 @@ from typing import Any, Literal
 
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 from pydantic import BaseModel
 
-from chunking.evals.rag import ANSWER_PROMPT, DEFAULT_GROQ_MODEL, E5Embeddings
+from chunking.evals.rag import DEFAULT_GROQ_MODEL, E5Embeddings
 from chunking.pipeline.indexer import LoadedIndex, load_index
 from chunking.rag.service import RagService
 
@@ -38,6 +37,16 @@ REWRITE_PROMPT = ChatPromptTemplate.from_messages([
         "Do not answer the question. Select text unless it explicitly asks about an image or table.",
     ),
     ("human", "Question: {question}"),
+])
+
+STRUCTURED_ANSWER_PROMPT = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        "Answer only from the supplied context. Return one claim for each factual statement. "
+        "Each claim must cite one or more source keys from the supplied context. "
+        "Do not put citation markup in claim text.",
+    ),
+    ("human", "Question: {question}\n\nContext:\n{context}"),
 ])
 
 
@@ -88,8 +97,11 @@ def _service_from_index(index: LoadedIndex, *, answerability_threshold: float) -
     model = index.manifest["embedding_model"]
     llm = ChatGroq(model=os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL), temperature=0)
 
-    def answer(question: str, context: str) -> str:
-        return (ANSWER_PROMPT | llm | StrOutputParser()).invoke({
+    def answer(question: str, context: str, source_keys: tuple[str, ...]) -> dict[str, Any]:
+        structured_answer = llm.with_structured_output(
+            _answer_schema(source_keys), method="json_schema", strict=True
+        )
+        return (STRUCTURED_ANSWER_PROMPT | structured_answer).invoke({
             "question": question,
             "context": context,
         })
@@ -108,6 +120,35 @@ def _service_from_index(index: LoadedIndex, *, answerability_threshold: float) -
         answer=answer,
         answerability_threshold=answerability_threshold,
     )
+
+
+def _answer_schema(source_keys: tuple[str, ...]) -> dict[str, Any]:
+    return {
+        "name": "cited_answer",
+        "description": "A document-grounded answer with citations for every claim.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "claims": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "text": {"type": "string"},
+                            "sources": {
+                                "type": "array",
+                                "items": {"type": "string", "enum": list(source_keys)},
+                            },
+                        },
+                        "required": ["text", "sources"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["claims"],
+            "additionalProperties": False,
+        },
+    }
 
 
 def _sse(event: str, payload: dict[str, Any]) -> str:

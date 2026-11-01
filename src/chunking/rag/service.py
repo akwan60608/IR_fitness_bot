@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import re
 from collections.abc import Callable
 from typing import Any, Protocol
 from uuid import uuid4
@@ -17,13 +16,9 @@ class QueryEmbeddings(Protocol):
     def embed_query(self, text: str) -> list[float]: ...
 
 
-Answer = Callable[[str, str], str]
+Answer = Callable[[str, str, tuple[str, ...]], Any]
 Rewrite = Callable[[str], dict[str, str]]
 _ROUTES = {"text", "visual", "table"}
-_CITATION_PATTERN = re.compile(r"\[source_id=([^\]]+)\]")
-_CITED_CLAIM_PATTERN = re.compile(
-    r"[^\n。！？.!?]+[。！？.!?]?\s*(?:\[source_id=[^\]]+\]\s*)+"
-)
 
 
 def rank_records(
@@ -79,6 +74,39 @@ def gate_score(
         for candidate, score in ranked
         if candidate["record_id"] == record["record_id"]
     )
+
+
+def answer_context(records: list[dict[str, Any]]) -> tuple[dict[str, dict[str, Any]], str]:
+    """Create request-local citation aliases without exposing persistent record IDs."""
+    aliases = {f"S{index}": record for index, record in enumerate(records, start=1)}
+    return aliases, "\n\n".join(
+        f"[source_key={alias}]\n{record['text']}" for alias, record in aliases.items()
+    )
+
+
+def render_cited_answer(answer: Any, aliases: dict[str, dict[str, Any]]) -> str | None:
+    """Validate structured citation aliases and render the stable source IDs."""
+    claims = answer.get("claims") if isinstance(answer, dict) else None
+    if not isinstance(claims, list) or not claims:
+        return None
+    rendered_claims: list[str] = []
+    for claim in claims:
+        if not isinstance(claim, dict):
+            return None
+        text = claim.get("text")
+        sources = claim.get("sources")
+        if (
+            not isinstance(text, str)
+            or not text.strip()
+            or not isinstance(sources, list)
+            or not sources
+            or not all(isinstance(source, str) and source in aliases for source in sources)
+            or len(set(sources)) != len(sources)
+        ):
+            return None
+        citations = "".join(f"[source_id={aliases[source]['record_id']}]" for source in sources)
+        rendered_claims.append(f"{text.strip()}{citations}")
+    return "\n".join(rendered_claims)
 
 
 def rewritten_query(rewrite: Rewrite, question: str) -> tuple[str, str] | None:
@@ -159,11 +187,9 @@ class RagService:
                 rewrite=rewrite,
             )
         sources = [self._source_card(record, role="supporting") for record in records]
-        context = "\n\n".join(
-            f"[source_id={record['record_id']}]\n{record['text']}" for record in records
-        )
+        aliases, context = answer_context(records)
         try:
-            answer = self._answer(clean_question, context)
+            answer = self._answer(clean_question, context, tuple(aliases))
         except Exception:
             return self._response(
                 request_id,
@@ -173,7 +199,8 @@ class RagService:
                 sources=[self._source_card(record, role="diagnostic") for record in records],
                 rewrite=rewrite,
             )
-        if not self._has_known_citations(answer, records):
+        rendered_answer = render_cited_answer(answer, aliases)
+        if rendered_answer is None:
             return self._response(
                 request_id,
                 status="generation_failed",
@@ -185,7 +212,7 @@ class RagService:
         return self._response(
             request_id,
             status="answered",
-            answer=answer,
+            answer=rendered_answer,
             sources=sources,
             rewrite=rewrite,
         )
@@ -218,16 +245,6 @@ class RagService:
             "excerpt": record["text"][:240],
             "role": role,
         }
-
-    @staticmethod
-    def _has_known_citations(answer: Any, records: list[dict[str, Any]]) -> bool:
-        if not isinstance(answer, str) or not answer.strip():
-            return False
-        cited_claims = list(_CITED_CLAIM_PATTERN.finditer(answer))
-        if not cited_claims or "".join(match.group() for match in cited_claims).strip() != answer.strip():
-            return False
-        citations = _CITATION_PATTERN.findall(answer)
-        return set(citations) <= {record["record_id"] for record in records}
 
     def _response(
         self,

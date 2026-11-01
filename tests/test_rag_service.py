@@ -3,6 +3,10 @@ import unittest
 from chunking.rag.service import RagService
 
 
+def _cited_answer(text: str, *sources: str) -> dict[str, object]:
+    return {"claims": [{"text": text, "sources": list(sources)}]}
+
+
 class _Embeddings:
     def embed_query(self, _question: str) -> list[float]:
         return [1.0, 0.0]
@@ -42,7 +46,7 @@ class RagServiceTest(unittest.TestCase):
             ],
             embeddings=_Embeddings(),
             rewrite=lambda _question: {"retrieval_query": "深蹲怎麼做？", "route": "text"},
-            answer=lambda _question, _context: "深蹲時保持背部中立。[source_id=text-1]",
+            answer=lambda _question, _context, _sources: _cited_answer("深蹲時保持背部中立。", "S1"),
             answerability_threshold=0.0,
         )
 
@@ -118,7 +122,7 @@ class RagServiceTest(unittest.TestCase):
             }],
             embeddings=embeddings,
             rewrite=lambda _question: {"retrieval_query": "改寫問題", "route": "text"},
-            answer=lambda _question, _context: "深蹲時保持背部中立。[source_id=text-1]",
+            answer=lambda _question, _context, _sources: _cited_answer("深蹲時保持背部中立。", "S1"),
             answerability_threshold=0.8,
         )
 
@@ -128,7 +132,7 @@ class RagServiceTest(unittest.TestCase):
         self.assertEqual(embeddings.calls, ["原始問題", "改寫問題"])
 
     def test_returns_retrieved_sources_when_generation_fails(self) -> None:
-        def fail_answer(_question: str, _context: str) -> str:
+        def fail_answer(_question: str, _context: str, _sources: tuple[str, ...]) -> dict[str, object]:
             raise RuntimeError("provider unavailable")
 
         service = RagService(
@@ -153,11 +157,11 @@ class RagServiceTest(unittest.TestCase):
         self.assertEqual(result["error_code"], "generation_failed")
         self.assertEqual([source["source_id"] for source in result["sources"]], ["text-1"])
 
-    def test_rejects_answers_with_missing_or_unknown_source_citations(self) -> None:
+    def test_rejects_answers_with_missing_or_unknown_source_aliases(self) -> None:
         for answer in (
-            "深蹲時保持背部中立。",
-            "深蹲時保持背部中立。[source_id=unknown]",
-            "深蹲時保持背部中立。[source_id=text-1]\n膝蓋要朝前。",
+            {"claims": [{"text": "深蹲時保持背部中立。", "sources": []}]},
+            _cited_answer("深蹲時保持背部中立。", "S9"),
+            {"claims": [{"text": "深蹲時保持背部中立。", "sources": ["S1"]}, {"text": "", "sources": ["S1"]}]},
         ):
             with self.subTest(answer=answer):
                 service = RagService(
@@ -172,7 +176,7 @@ class RagServiceTest(unittest.TestCase):
                     }],
                     embeddings=_Embeddings(),
                     rewrite=lambda _question: {"retrieval_query": "深蹲怎麼做？", "route": "text"},
-                    answer=lambda _question, _context: answer,
+                    answer=lambda _question, _context, _sources: answer,
                     answerability_threshold=0.0,
                 )
 
@@ -232,7 +236,7 @@ class RagServiceTest(unittest.TestCase):
             ],
             embeddings=embeddings,
             rewrite=lambda _question: {"retrieval_query": "改寫問題", "route": "text"},
-            answer=lambda _question, context: contexts.append(context) or "回答[source_id=shared]",
+            answer=lambda _question, context, _sources: contexts.append(context) or _cited_answer("回答", "S1"),
             answerability_threshold=0.0,
         )
 
@@ -250,9 +254,9 @@ class RagServiceTest(unittest.TestCase):
         self.assertEqual(
             contexts,
             [
-                "[source_id=shared]\n兩個查詢都命中\n\n"
-                "[source_id=raw-a]\n原始第一名\n\n"
-                "[source_id=rewrite-a]\n改寫第一名"
+                "[source_key=S1]\n兩個查詢都命中\n\n"
+                "[source_key=S2]\n原始第一名\n\n"
+                "[source_key=S3]\n改寫第一名"
             ],
         )
 
@@ -275,7 +279,7 @@ class RagServiceTest(unittest.TestCase):
                     }],
                     embeddings=embeddings,
                     rewrite=rewrite,
-                    answer=lambda _question, _context: "回答[source_id=text-1]",
+                    answer=lambda _question, _context, _sources: _cited_answer("回答", "S1"),
                     answerability_threshold=0.0,
                 )
 
@@ -302,7 +306,7 @@ class RagServiceTest(unittest.TestCase):
             }],
             embeddings=_Embeddings(),
             rewrite=lambda _question: {"retrieval_query": "圖片問題", "route": "visual"},
-            answer=lambda _question, _context: "回答[source_id=text-1]",
+            answer=lambda _question, _context, _sources: _cited_answer("回答", "S1"),
             answerability_threshold=0.0,
         )
 
@@ -313,6 +317,32 @@ class RagServiceTest(unittest.TestCase):
             "route": "text",
             "requested_route": "visual",
         })
+
+    def test_maps_short_aliases_to_long_record_ids_without_putting_them_in_model_context(self) -> None:
+        contexts: list[str] = []
+        long_record_id = "sha256:demo-document:chunk:9fbc33a1e2d4"
+        service = RagService(
+            document_id="sha256:demo-document",
+            records=[{
+                "record_id": long_record_id,
+                "record_type": "text",
+                "text": "深蹲時保持背部中立。",
+                "embedding": [1.0, 0.0],
+                "source_refs": ["#/texts/1"],
+                "page_numbers": [2],
+            }],
+            embeddings=_Embeddings(),
+            rewrite=lambda _question: {"retrieval_query": "深蹲怎麼做？", "route": "text"},
+            answer=lambda _question, context, _sources: contexts.append(context) or _cited_answer("保持背部中立。", "S1"),
+            answerability_threshold=0.0,
+        )
+
+        result = service.answer("深蹲怎麼做？")
+
+        self.assertEqual(contexts, ["[source_key=S1]\n深蹲時保持背部中立。"])
+        self.assertNotIn(long_record_id, contexts[0])
+        self.assertEqual(result["answer"], f"保持背部中立。[source_id={long_record_id}]")
+        self.assertEqual(result["sources"][0]["source_id"], long_record_id)
 
 
 if __name__ == "__main__":

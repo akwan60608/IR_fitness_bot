@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from chunking.rag.api import create_app
+from chunking.rag.api import _answer_schema, create_app
 from chunking.rag.service import RagService
 from chunking.rag.streamlit_app import _answer
 
@@ -29,7 +29,19 @@ class _Embeddings:
         return [1.0, 0.0]
 
 
+def _cited_answer(text: str, *sources: str) -> dict[str, object]:
+    return {"claims": [{"text": text, "sources": list(sources)}]}
+
+
 class RagApiTest(unittest.TestCase):
+    def test_answer_schema_limits_citations_to_the_request_aliases(self) -> None:
+        schema = _answer_schema(("S1", "S2"))
+        source_items = schema["parameters"]["properties"]["claims"]["items"]["properties"]["sources"]["items"]
+
+        self.assertEqual(source_items["enum"], ["S1", "S2"])
+        self.assertFalse(schema["parameters"]["additionalProperties"])
+        self.assertFalse(schema["parameters"]["properties"]["claims"]["items"]["additionalProperties"])
+
     def test_streamlit_client_rejects_malformed_or_missing_result_events(self) -> None:
         with patch("chunking.rag.streamlit_app.urlopen", return_value=_SseResponse([b"data: []\n"])):
             with self.assertRaisesRegex(ValueError, "invalid"):
@@ -79,7 +91,7 @@ class RagApiTest(unittest.TestCase):
             }],
             embeddings=_Embeddings(),
             rewrite=lambda _question: {"retrieval_query": "深蹲怎麼做？", "route": "text"},
-            answer=lambda _question, _context: "保持背部中立。[source_id=text-1]",
+            answer=lambda _question, _context, _sources: _cited_answer("保持背部中立。", "S1"),
             answerability_threshold=0.0,
         )
 
@@ -108,7 +120,7 @@ class RagApiTest(unittest.TestCase):
             }],
             embeddings=_Embeddings(),
             rewrite=lambda _question: {"retrieval_query": "深蹲怎麼做？", "route": "text"},
-            answer=lambda _question, _context: "保持背部中立。[source_id=text-1]",
+            answer=lambda _question, _context, _sources: _cited_answer("保持背部中立。", "S1"),
             answerability_threshold=0.0,
         )
 
