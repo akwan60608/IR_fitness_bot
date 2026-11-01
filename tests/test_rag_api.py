@@ -63,6 +63,7 @@ class RagApiTest(unittest.TestCase):
                 "page_numbers": [2],
             }],
             embeddings=_Embeddings(),
+            rewrite=lambda _question: {"retrieval_query": "深蹲怎麼做？", "route": "text"},
             answer=lambda _question, _context: "保持背部中立。",
         )
 
@@ -72,6 +73,7 @@ class RagApiTest(unittest.TestCase):
         self.assertEqual(response.headers["content-type"], "text/event-stream; charset=utf-8")
         self.assertIn("event: result", response.text)
         self.assertIn('"status": "answered"', response.text)
+        self.assertIn('"rewrite": {"status": "rewritten", "route": "text"}', response.text)
         self.assertTrue(response.text.endswith("event: done\ndata: {}\n\n"))
 
     def test_answer_endpoint_requires_a_question_field(self) -> None:
@@ -86,6 +88,7 @@ class RagApiTest(unittest.TestCase):
                 "page_numbers": [2],
             }],
             embeddings=_Embeddings(),
+            rewrite=lambda _question: {"retrieval_query": "深蹲怎麼做？", "route": "text"},
             answer=lambda _question, _context: "保持背部中立。",
         )
 

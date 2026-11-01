@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 from pydantic import BaseModel
 
@@ -20,6 +21,21 @@ from chunking.rag.service import RagService
 
 class AnswerRequest(BaseModel):
     question: str
+
+
+class RewriteResult(BaseModel):
+    retrieval_query: str
+    route: Literal["text", "visual", "table"]
+
+
+REWRITE_PROMPT = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        "Rewrite the question for retrieval from a fitness document corpus. "
+        "Do not answer the question. Select text unless it explicitly asks about an image or table.",
+    ),
+    ("human", "Question: {question}"),
+])
 
 
 def create_app(service: RagService) -> FastAPI:
@@ -63,11 +79,17 @@ def _service_from_index(index: LoadedIndex) -> RagService:
             "context": context,
         })
 
+    structured_rewriter = llm.with_structured_output(RewriteResult)
+
+    def rewrite(question: str) -> dict[str, str]:
+        return (REWRITE_PROMPT | structured_rewriter).invoke({"question": question}).model_dump()
+
     return RagService(
         document_id=index.manifest["document_id"],
         pipeline_run_id=index.manifest["pipeline_run_id"],
         records=index.documents,
         embeddings=E5Embeddings(model),
+        rewrite=rewrite,
         answer=answer,
     )
 

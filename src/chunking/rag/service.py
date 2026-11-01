@@ -7,6 +7,8 @@ from collections.abc import Callable
 from typing import Any, Protocol
 from uuid import uuid4
 
+from chunking.evals.rag import DEFAULT_RRF_K
+
 
 class QueryEmbeddings(Protocol):
     """The query half of the persisted index embedding interface."""
@@ -15,6 +17,8 @@ class QueryEmbeddings(Protocol):
 
 
 Answer = Callable[[str, str], str]
+Rewrite = Callable[[str], dict[str, str]]
+_ROUTES = {"text", "visual", "table"}
 
 
 class RagService:
@@ -26,6 +30,7 @@ class RagService:
         document_id: str,
         records: list[dict[str, Any]],
         embeddings: QueryEmbeddings,
+        rewrite: Rewrite,
         answer: Answer,
         pipeline_run_id: str | None = None,
     ) -> None:
@@ -34,6 +39,7 @@ class RagService:
         if not self._records:
             raise ValueError("Index has no text records for the text-only RAG service.")
         self._embeddings = embeddings
+        self._rewrite = rewrite
         self._answer = answer
         self._pipeline_run_id = pipeline_run_id
 
@@ -55,7 +61,13 @@ class RagService:
                 message="問題最多 500 個字元。",
             )
 
-        records = self._retrieve(clean_question)
+        retrieval_query, rewrite = self._rewrite_query(clean_question)
+        raw_records = self._retrieve(clean_question)
+        records = (
+            self._fuse(raw_records, self._retrieve(retrieval_query))
+            if rewrite["status"] == "rewritten"
+            else raw_records
+        )
         sources = [self._source_card(record) for record in records]
         context = "\n\n".join(
             f"[source_id={record['record_id']}]\n{record['text']}" for record in records
@@ -69,8 +81,26 @@ class RagService:
                 error_code="generation_failed",
                 message="無法產生回答，請稍後再試。",
                 sources=sources,
+                rewrite=rewrite,
             )
-        return self._response(request_id, status="answered", answer=answer, sources=sources)
+        return self._response(
+            request_id,
+            status="answered",
+            answer=answer,
+            sources=sources,
+            rewrite=rewrite,
+        )
+
+    def _rewrite_query(self, question: str) -> tuple[str, dict[str, str]]:
+        try:
+            result = self._rewrite(question)
+            retrieval_query = result.get("retrieval_query") if isinstance(result, dict) else None
+            route = result.get("route") if isinstance(result, dict) else None
+            if not isinstance(retrieval_query, str) or not retrieval_query.strip() or route not in _ROUTES:
+                raise ValueError("invalid rewrite result")
+        except Exception:
+            return question, {"status": "fallback", "route": "text"}
+        return retrieval_query.strip(), {"status": "rewritten", "route": route}
 
     def _retrieve(self, question: str) -> list[dict[str, Any]]:
         query = self._embeddings.embed_query(question)
@@ -79,6 +109,28 @@ class RagService:
             self._records,
             key=lambda record: (-self._cosine(query, record["embedding"]), record["record_id"]),
         )[:3]
+
+    @staticmethod
+    def _fuse(
+        raw_records: list[dict[str, Any]],
+        rewritten_records: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        combined: dict[str, tuple[dict[str, Any], float]] = {}
+        for ranked_records in (raw_records, rewritten_records):
+            for rank, record in enumerate(ranked_records, start=1):
+                record_id = record["record_id"]
+                previous = combined.get(record_id)
+                combined[record_id] = (
+                    record,
+                    (previous[1] if previous else 0.0) + 1 / (DEFAULT_RRF_K + rank),
+                )
+        return [
+            record
+            for _record_id, (record, _score) in sorted(
+                combined.items(),
+                key=lambda item: (-item[1][1], item[0]),
+            )[:3]
+        ]
 
     @staticmethod
     def _cosine(left: list[float], right: list[float]) -> float:
@@ -105,6 +157,7 @@ class RagService:
         error_code: str | None = None,
         message: str | None = None,
         sources: list[dict[str, Any]] | None = None,
+        rewrite: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         return {
             "status": status,
@@ -114,4 +167,5 @@ class RagService:
             "error_code": error_code,
             "message": message,
             "sources": sources or [],
+            "rewrite": rewrite or {"status": "not_run", "route": "text"},
         }

@@ -36,7 +36,13 @@ def _valid_result(result: Any) -> bool:
     elif not isinstance(result.get("message"), str):
         return False
     sources = result.get("sources")
-    return isinstance(sources, list) and all(
+    rewrite = result.get("rewrite")
+    return (
+        isinstance(rewrite, dict)
+        and rewrite.get("status") in {"rewritten", "fallback", "not_run"}
+        and rewrite.get("route") in {"text", "visual", "table"}
+        and isinstance(sources, list)
+        and all(
         isinstance(source, dict)
         and isinstance(source.get("source_id"), str)
         and isinstance(source.get("document_id"), str)
@@ -45,6 +51,7 @@ def _valid_result(result: Any) -> bool:
         and isinstance(source.get("type"), str)
         and isinstance(source.get("excerpt"), str)
         for source in sources
+        )
     )
 
 
@@ -63,6 +70,10 @@ def main() -> None:
         st.write(result["answer"])
     else:
         st.warning(result["message"])
+    if result["rewrite"]["status"] == "fallback":
+        st.caption("查詢改寫失敗，已使用原始問題檢索。")
+    elif result["rewrite"]["status"] == "rewritten":
+        st.caption(f"查詢已改寫；檢索路由：{result['rewrite']['route']}。")
     st.subheader("來源")
     for source in result["sources"]:
         st.caption(
