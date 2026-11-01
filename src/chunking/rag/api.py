@@ -58,8 +58,20 @@ def create_app_from_environment() -> FastAPI:
     index_dir = os.getenv("INDEX_DIR")
     if not index_dir:
         raise RuntimeError("INDEX_DIR must name the local retrieval index directory.")
+    answerability_threshold = _answerability_threshold_from_environment()
     index = load_index(Path(index_dir))
-    return create_app(_service_from_index(index))
+    return create_app(_service_from_index(index, answerability_threshold=answerability_threshold))
+
+
+def _answerability_threshold_from_environment() -> float:
+    value = os.getenv("ANSWERABILITY_THRESHOLD")
+    try:
+        threshold = float(value) if value is not None else None
+    except ValueError as error:
+        raise RuntimeError("ANSWERABILITY_THRESHOLD must be a cosine score from -1 to 1.") from error
+    if threshold is None or not -1 <= threshold <= 1:
+        raise RuntimeError("ANSWERABILITY_THRESHOLD must be a cosine score from -1 to 1.")
+    return threshold
 
 
 def main() -> None:
@@ -69,7 +81,7 @@ def main() -> None:
     uvicorn.run(create_app_from_environment(), host="127.0.0.1", port=8000)
 
 
-def _service_from_index(index: LoadedIndex) -> RagService:
+def _service_from_index(index: LoadedIndex, *, answerability_threshold: float) -> RagService:
     model = index.manifest["embedding_model"]
     llm = ChatGroq(model=os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL), temperature=0)
 
@@ -91,6 +103,7 @@ def _service_from_index(index: LoadedIndex) -> RagService:
         embeddings=E5Embeddings(model),
         rewrite=rewrite,
         answer=answer,
+        answerability_threshold=answerability_threshold,
     )
 
 

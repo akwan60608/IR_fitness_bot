@@ -154,7 +154,7 @@ ANSWER_PROMPT = ChatPromptTemplate.from_messages([
     (
         "system",
         "Answer only from the supplied context. If it is insufficient, say so. "
-        "After every factual claim, cite the relevant source ID in square brackets.",
+        "After every factual claim, cite the relevant source ID exactly as [source_id=<id>].",
     ),
     ("human", "Question: {question}\n\nContext:\n{context}"),
 ])

@@ -51,6 +51,18 @@ class RagApiTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "INDEX_DIR"):
                 create_app_from_environment()
 
+    def test_startup_requires_an_explicit_calibrated_answerability_threshold(self) -> None:
+        for value in (None, "not-a-score", "1.1"):
+            with self.subTest(value=value), patch.dict(
+                os.environ,
+                {"INDEX_DIR": "data/index/demo", **({"ANSWERABILITY_THRESHOLD": value} if value else {})},
+                clear=True,
+            ):
+                from chunking.rag.api import create_app_from_environment
+
+                with self.assertRaisesRegex(RuntimeError, "ANSWERABILITY_THRESHOLD"):
+                    create_app_from_environment()
+
     def test_answer_endpoint_returns_sse_result_and_done_events(self) -> None:
         service = RagService(
             document_id="sha256:demo-document",
@@ -64,7 +76,8 @@ class RagApiTest(unittest.TestCase):
             }],
             embeddings=_Embeddings(),
             rewrite=lambda _question: {"retrieval_query": "深蹲怎麼做？", "route": "text"},
-            answer=lambda _question, _context: "保持背部中立。",
+            answer=lambda _question, _context: "保持背部中立。[source_id=text-1]",
+            answerability_threshold=0.0,
         )
 
         response = TestClient(create_app(service)).post("/answer", json={"question": "深蹲怎麼做？"})
@@ -92,7 +105,8 @@ class RagApiTest(unittest.TestCase):
             }],
             embeddings=_Embeddings(),
             rewrite=lambda _question: {"retrieval_query": "深蹲怎麼做？", "route": "text"},
-            answer=lambda _question, _context: "保持背部中立。",
+            answer=lambda _question, _context: "保持背部中立。[source_id=text-1]",
+            answerability_threshold=0.0,
         )
 
         response = TestClient(create_app(service)).post("/answer", json={})

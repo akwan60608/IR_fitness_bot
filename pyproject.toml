@@ -22,6 +22,7 @@ chunking-build-index = "chunking.index_cli:main"
 chunking-rag-eval = "chunking.eval_cli:main"
 chunking-ocr-eval = "chunking.ocr_eval_cli:main"
 chunking-rag-api = "chunking.rag.api:main"
+chunking-rag-calibrate = "chunking.rag.calibration:main"
 
 [build-system]
 requires = ["uv_build>=0.12.11,<0.13.0"]

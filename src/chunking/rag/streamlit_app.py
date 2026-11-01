@@ -51,6 +51,7 @@ def _valid_result(result: Any) -> bool:
         and all(isinstance(page, int) for page in source["page_numbers"])
         and isinstance(source.get("type"), str)
         and isinstance(source.get("excerpt"), str)
+        and source.get("role") in {"supporting", "diagnostic"}
         for source in sources
         )
     )
@@ -77,7 +78,7 @@ def main() -> None:
         st.caption(f"查詢已改寫；目前檢索路由：{result['rewrite']['route']}。")
     else:
         st.caption("此請求未執行查詢改寫。")
-    st.subheader("來源")
+    st.subheader("來源" if result["status"] == "answered" else "診斷來源（非回答依據）")
     for source in result["sources"]:
         st.caption(
             f"{source['document_id']} · p. {', '.join(map(str, source['page_numbers']))} · {source['type']}"
