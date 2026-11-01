@@ -41,6 +41,7 @@ def _valid_result(result: Any) -> bool:
         isinstance(rewrite, dict)
         and rewrite.get("status") in {"rewritten", "fallback", "not_run"}
         and rewrite.get("route") in {"text", "visual", "table"}
+        and rewrite.get("requested_route") in {"text", "visual", "table"}
         and isinstance(sources, list)
         and all(
         isinstance(source, dict)
@@ -73,7 +74,9 @@ def main() -> None:
     if result["rewrite"]["status"] == "fallback":
         st.caption("查詢改寫失敗，已使用原始問題檢索。")
     elif result["rewrite"]["status"] == "rewritten":
-        st.caption(f"查詢已改寫；檢索路由：{result['rewrite']['route']}。")
+        st.caption(f"查詢已改寫；目前檢索路由：{result['rewrite']['route']}。")
+    else:
+        st.caption("此請求未執行查詢改寫。")
     st.subheader("來源")
     for source in result["sources"]:
         st.caption(

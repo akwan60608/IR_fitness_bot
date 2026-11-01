@@ -99,8 +99,16 @@ class RagService:
             if not isinstance(retrieval_query, str) or not retrieval_query.strip() or route not in _ROUTES:
                 raise ValueError("invalid rewrite result")
         except Exception:
-            return question, {"status": "fallback", "route": "text"}
-        return retrieval_query.strip(), {"status": "rewritten", "route": route}
+            return question, {
+                "status": "fallback",
+                "route": "text",
+                "requested_route": "text",
+            }
+        return retrieval_query.strip(), {
+            "status": "rewritten",
+            "route": "text",
+            "requested_route": route,
+        }
 
     def _retrieve(self, question: str) -> list[dict[str, Any]]:
         query = self._embeddings.embed_query(question)
@@ -167,5 +175,9 @@ class RagService:
             "error_code": error_code,
             "message": message,
             "sources": sources or [],
-            "rewrite": rewrite or {"status": "not_run", "route": "text"},
+            "rewrite": rewrite or {
+                "status": "not_run",
+                "route": "text",
+                "requested_route": "text",
+            },
         }

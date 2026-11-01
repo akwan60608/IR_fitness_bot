@@ -161,7 +161,11 @@ class RagServiceTest(unittest.TestCase):
         self.assertEqual([source["source_id"] for source in result["sources"]], [
             "shared", "raw-a", "rewrite-a",
         ])
-        self.assertEqual(result["rewrite"], {"status": "rewritten", "route": "text"})
+        self.assertEqual(result["rewrite"], {
+            "status": "rewritten",
+            "route": "text",
+            "requested_route": "text",
+        })
         self.assertEqual(
             contexts,
             [
@@ -196,8 +200,36 @@ class RagServiceTest(unittest.TestCase):
                 result = service.answer("原始問題")
 
                 self.assertEqual(embeddings.calls, ["原始問題"])
-                self.assertEqual(result["rewrite"], {"status": "fallback", "route": "text"})
+                self.assertEqual(result["rewrite"], {
+                    "status": "fallback",
+                    "route": "text",
+                    "requested_route": "text",
+                })
                 self.assertEqual(result["status"], "answered")
+
+    def test_reports_a_visual_request_as_text_until_visual_retrieval_exists(self) -> None:
+        service = RagService(
+            document_id="sha256:demo-document",
+            records=[{
+                "record_id": "text-1",
+                "record_type": "text",
+                "text": "文件文字",
+                "embedding": [1.0, 0.0],
+                "source_refs": [],
+                "page_numbers": [1],
+            }],
+            embeddings=_Embeddings(),
+            rewrite=lambda _question: {"retrieval_query": "圖片問題", "route": "visual"},
+            answer=lambda _question, _context: "回答",
+        )
+
+        result = service.answer("圖片問題")
+
+        self.assertEqual(result["rewrite"], {
+            "status": "rewritten",
+            "route": "text",
+            "requested_route": "visual",
+        })
 
 
 if __name__ == "__main__":
